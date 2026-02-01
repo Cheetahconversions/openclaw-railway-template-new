@@ -648,6 +648,15 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
         clawArgs(["config", "set", "gateway.controlUi.allowInsecureAuth", "true"]),
       );
 
+      // Set user-specified model if provided
+      if (payload.model?.trim()) {
+        const modelSet = await runCmd(
+          OPENCLAW_NODE,
+          clawArgs(["config", "set", "agents.defaults.model", payload.model.trim()]),
+        );
+        extra += `\n[model config] exit=${modelSet.code}\n${modelSet.output || "(no output)"}`;
+      }
+
       const channelsHelp = await runCmd(
         OPENCLAW_NODE,
         clawArgs(["channels", "add", "--help"]),
@@ -827,7 +836,7 @@ const ALLOWED_CONSOLE_COMMANDS = new Set([
   "openclaw.status",
   "openclaw.health",
   "openclaw.doctor",
-  "openclaw.logs.tail",
+  "openclaw.logs",
   "openclaw.config.get",
 ]);
 
@@ -874,9 +883,9 @@ app.post("/setup/api/console/run", requireSetupAuth, async (req, res) => {
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["doctor"]));
       return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
     }
-    if (cmd === "openclaw.logs.tail") {
-      const lines = Math.max(50, Math.min(1000, Number.parseInt(arg || "200", 10) || 200));
-      const r = await runCmd(OPENCLAW_NODE, clawArgs(["logs", "--tail", String(lines)]));
+    if (cmd === "openclaw.logs") {
+      // Note: --tail may not be supported in all versions, so we just run `logs` without args.
+      const r = await runCmd(OPENCLAW_NODE, clawArgs(["logs"]));
       return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
     }
     if (cmd === "openclaw.config.get") {
