@@ -20,6 +20,10 @@
   var configSaveEl = document.getElementById('configSave');
   var configOutEl = document.getElementById('configOut');
 
+  // UI Links
+  var topUiLink = document.getElementById('topUiLink');
+  var bottomUiLink = document.getElementById('bottomUiLink');
+
   function setStatus(s) {
     statusEl.textContent = s;
   }
@@ -67,11 +71,18 @@
   }
 
   function refreshStatus() {
-    setStatus('Loading...');
+    setStatus('Loading... Engine is starting up, please wait 15-20s...');
     return httpJson('/setup/api/status').then(function (j) {
       var ver = j.openclawVersion ? (' | ' + j.openclawVersion) : '';
       setStatus((j.configured ? 'Configured - open /openclaw' : 'Not configured - run setup below') + ver);
       renderAuth(j.authGroups || []);
+
+      if (j.gatewayToken) {
+        var tokenUrl = '/openclaw?token=' + encodeURIComponent(j.gatewayToken);
+        if (topUiLink) topUiLink.href = tokenUrl;
+        if (bottomUiLink) bottomUiLink.href = tokenUrl;
+      }
+
       if (j.channelsAddHelp && j.channelsAddHelp.indexOf('telegram') === -1) {
         logEl.textContent += '\nNote: this openclaw build does not list telegram in `channels add --help`. Telegram auto-add will be skipped.\n';
       }

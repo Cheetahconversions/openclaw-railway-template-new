@@ -9,7 +9,11 @@
 </head>
 
 <body>
-  <h1>Openclaw Setup</h1>
+  <div style="margin-bottom: 1rem;">
+    <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/openclaw-logo-text.png"
+      alt="OpenClaw" style="height: 40px;" />
+  </div>
+  <h1>Setup Wizard</h1>
   <p class="muted">This wizard configures Openclaw by running the same onboarding command it uses in the terminal, but
     from the browser.</p>
 
@@ -17,7 +21,7 @@
     <h2>Status</h2>
     <div id="status">Loading...</div>
     <div style="margin-top: 0.75rem">
-      <a href="/openclaw" target="_blank">Open Openclaw UI</a>
+      <a id="topUiLink" href="/openclaw" target="_blank">Open Openclaw UI</a>
       &nbsp;|&nbsp;
       <a href="/setup/export" target="_blank">Download backup (.tar.gz)</a>
     </div>
@@ -108,9 +112,19 @@
   <div class="card">
     <h2>3) Run onboarding</h2>
     <button id="run">Run setup</button>
+    <a id="bottomUiLink" href="/openclaw" target="_blank"
+      style="display:inline-block; padding: 0.8rem 1.4rem; border-radius: 8px; background: linear-gradient(145deg, #ff4d4d, #d93d3d); color: #fff; font-weight: 600; text-decoration: none; margin-left: 0.5rem; transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s">Open
+      OpenClaw UI</a>
     <button id="pairingApprove" class="secondary-button">Approve pairing</button>
     <button id="reset" class="tertiary-button">Reset setup</button>
     <pre id="log"></pre>
+    <p class="muted" style="margin-top: 1rem; border-top: 1px solid #2d3b4f; padding-top: 0.75rem;">
+      <strong>Note:</strong> Steps to follow:
+      <br>1. Click <strong>Run setup</strong> and wait for it to complete.
+      <br>2. If you added Telegram/Discord tokens, click <strong>Approve pairing</strong> and enter the code sent to
+      your channel.
+      <br>3. Finally, click <strong>Open OpenClaw UI</strong> above to access the dashboard.
+    </p>
     <p class="muted">Reset deletes the Openclaw config file so you can rerun onboarding. Pairing approval lets you grant
       DM access when dmPolicy=pairing.</p>
   </div>
