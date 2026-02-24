@@ -86,14 +86,7 @@ RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.js "$@"'
 
 # Install gog (Google Workspace CLI for Gmail + Sheets)
 RUN su -c "brew install openclaw/tap/gog" linuxbrew
-```
-This runs the brew command as the `linuxbrew` user (which is how the rest of the Homebrew setup works in the Dockerfile). Can you go to GitHub and update that one line in your `Cheetahconversions/openclaw-railway-template-new` repo on the `patch-1` branch? Just change:
-```
-RUN brew install openclaw/tap/gog
-```
-to:
-```
-RUN su -c "brew install openclaw/tap/gog" linuxbrew
+
 COPY src ./src
 
 ENV PORT=8080
