@@ -7,7 +7,7 @@ RUN apt-get update \
     git \
     ca-certificates \
     curl \
-    python3 \
+    python3 \h
     make \
     g++ \
   && rm -rf /var/lib/apt/lists/*
@@ -85,7 +85,7 @@ RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.js "$@"'
   && chmod +x /usr/local/bin/openclaw
 
 # Install gog (Google Workspace CLI for Gmail + Sheets)
-RUN brew install openclaw/tap/gog
+RUN su -c "brew install openclaw/tap/gog" linuxbrew
 
 COPY src ./src
 
