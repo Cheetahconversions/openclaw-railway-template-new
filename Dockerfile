@@ -62,7 +62,7 @@ RUN apt-get update \
                                                                                         # Wrapper deps
                                                                                         RUN corepack enable
                                                                                         COPY package.json pnpm-lock.yaml ./
-                                                                                        RUN pnpm install --prod --frozen-lockfile && pnpm store prune
+                                                                                        RUN pnpm install --prod --no-frozen-lockfile && pnpm store prune
 
                                                                                         # Copy built openclaw
                                                                                         COPY --from=openclaw-build /openclaw /openclaw
