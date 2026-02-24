@@ -85,7 +85,7 @@ RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.js "$@"'
   && chmod +x /usr/local/bin/openclaw
 
 # Install gog (Google Workspace CLI for Gmail + Sheets)
-RUN su -c "brew install openclaw/tap/gog" linuxbrew
+RUN brew install openclaw/tap/gog
 
 COPY src ./src
 
