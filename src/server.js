@@ -1124,7 +1124,7 @@ function saveGmailToken(tokens) {
 }
 
 // GET /auth/gmail  — kick off the OAuth flow (protected by setup password)
-app.get("/auth/gmail", requireSetupAuth, (_req, res) => {
+app.get("/setup/gmail/connect", requireSetupAuth, (_req, res) => {
     if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !process.env.GOOGLE_REDIRECT_URI) {
           return res.status(500).type("text/plain").send(
                   "Missing GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET or GOOGLE_REDIRECT_URI env vars."
@@ -1140,7 +1140,7 @@ app.get("/auth/gmail", requireSetupAuth, (_req, res) => {
 });
 
 // GET /auth/gmail/callback — Google redirects here with ?code=
-app.get("/auth/gmail/callback", async (req, res) => {
+app.get("/setup/gmail/callback", async (req, res) => {
     const { code, error } = req.query;
     if (error) {
           return res.status(400).type("text/plain").send(`OAuth error: ${error}`);
@@ -1175,7 +1175,7 @@ app.get("/setup/api/gmail/status", requireSetupAuth, (_req, res) => {
 // Helper — returns an authenticated Gmail client (refreshes token automatically)
 export async function getGmailClient() {
     const token = loadGmailToken();
-    if (!token) throw new Error("Gmail not connected. Visit /auth/gmail to authorise.");
+        if (!token) throw new Error("Gmail not connected. Visit /setup/gmail/connect to authorise.");
     const oauth2Client = getOAuth2Client();
     oauth2Client.setCredentials(token);
     oauth2Client.on("tokens", (newTokens) => {
