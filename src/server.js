@@ -1029,59 +1029,6 @@ proxy.on("proxyReqWs", (proxyReq, req, socket, options, head) => {
   console.log(`[proxy-event] Headers:`, JSON.stringify(proxyReq.getHeaders()));
 });
 
-app.use(async (req, res) => {
-  // If not configured, force users to /setup for any non-setup routes.
-  if (!isConfigured() && !req.path.startsWith("/setup")) {
-    return res.redirect("/setup");
-  }
-
-  if (isConfigured()) {
-    try {
-      await ensureGatewayRunning();
-    } catch (err) {
-      return res
-        .status(503)
-        .type("text/plain")
-        .send(`Gateway not ready: ${String(err)}`);
-    }
-  }
-
-  // Proxy to gateway (auth token injected via proxyReq event)
-  return proxy.web(req, res, { target: GATEWAY_TARGET });
-});
-
-// Create HTTP server from Express app
-const server = app.listen(PORT, () => {
-  console.log(`[wrapper] listening on port ${PORT}`);
-  console.log(`[wrapper] setup wizard: http://localhost:${PORT}/setup`);
-  console.log(`[wrapper] configured: ${isConfigured()}`);
-});
-
-// Handle WebSocket upgrades
-server.on("upgrade", async (req, socket, head) => {
-  if (!isConfigured()) {
-    socket.destroy();
-    return;
-  }
-  try {
-    await ensureGatewayRunning();
-  } catch {
-    socket.destroy();
-    return;
-  }
-
-  // Inject auth token via headers option (req.headers modification doesn't work for WS)
-  console.log(`[ws-upgrade] Proxying WebSocket upgrade with token: ${OPENCLAW_GATEWAY_TOKEN.slice(0, 16)}...`);
-
-  proxy.ws(req, socket, head, {
-    target: GATEWAY_TARGET,
-    headers: {
-      Authorization: `Bearer ${OPENCLAW_GATEWAY_TOKEN}`,
-    },
-  });
-});
-
-
 // ============================================================
 // Gmail OAuth routes
 // ============================================================
@@ -1185,6 +1132,59 @@ export async function getGmailClient() {
     return google.gmail({ version: "v1", auth: oauth2Client });
 }
 // ============================================================
+app.use(async (req, res) => {
+  // If not configured, force users to /setup for any non-setup routes.
+  if (!isConfigured() && !req.path.startsWith("/setup")) {
+    return res.redirect("/setup");
+  }
+
+  if (isConfigured()) {
+    try {
+      await ensureGatewayRunning();
+    } catch (err) {
+      return res
+        .status(503)
+        .type("text/plain")
+        .send(`Gateway not ready: ${String(err)}`);
+    }
+  }
+
+  // Proxy to gateway (auth token injected via proxyReq event)
+  return proxy.web(req, res, { target: GATEWAY_TARGET });
+});
+
+// Create HTTP server from Express app
+const server = app.listen(PORT, () => {
+  console.log(`[wrapper] listening on port ${PORT}`);
+  console.log(`[wrapper] setup wizard: http://localhost:${PORT}/setup`);
+  console.log(`[wrapper] configured: ${isConfigured()}`);
+});
+
+// Handle WebSocket upgrades
+server.on("upgrade", async (req, socket, head) => {
+  if (!isConfigured()) {
+    socket.destroy();
+    return;
+  }
+  try {
+    await ensureGatewayRunning();
+  } catch {
+    socket.destroy();
+    return;
+  }
+
+  // Inject auth token via headers option (req.headers modification doesn't work for WS)
+  console.log(`[ws-upgrade] Proxying WebSocket upgrade with token: ${OPENCLAW_GATEWAY_TOKEN.slice(0, 16)}...`);
+
+  proxy.ws(req, socket, head, {
+    target: GATEWAY_TARGET,
+    headers: {
+      Authorization: `Bearer ${OPENCLAW_GATEWAY_TOKEN}`,
+    },
+  });
+});
+
+
 process.on("SIGTERM", () => {
   // Best-effort shutdown
   try {
