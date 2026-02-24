@@ -7,6 +7,7 @@ import path from "node:path";
 import express from "express";
 import httpProxy from "http-proxy";
 import * as tar from "tar";
+import { google } from "googleapis";
 
 // Railway commonly sets PORT=8080 for HTTP services.
 const PORT = Number.parseInt(process.env.PORT ?? "8080", 10);
@@ -1080,6 +1081,110 @@ server.on("upgrade", async (req, socket, head) => {
   });
 });
 
+
+// ============================================================
+// Gmail OAuth routes
+// ============================================================
+
+const GMAIL_SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+  ];
+
+function getOAuth2Client() {
+    return new google.auth.OAuth2(
+          process.env.GOOGLE_CLIENT_ID,
+          process.env.GOOGLE_CLIENT_SECRET,
+          process.env.GOOGLE_REDIRECT_URI,
+        );
+}
+
+// In-memory token store (persisted to STATE_DIR/gmail-token.json)
+const GMAIL_TOKEN_PATH = path.join(
+    process.env.OPENCLAW_STATE_DIR?.trim() || path.join(os.homedir(), ".openclaw"),
+    "gmail-token.json",
+  );
+
+function loadGmailToken() {
+    try {
+          const raw = fs.readFileSync(GMAIL_TOKEN_PATH, "utf8");
+          return JSON.parse(raw);
+    } catch {
+          return null;
+    }
+}
+
+function saveGmailToken(tokens) {
+    try {
+          fs.mkdirSync(path.dirname(GMAIL_TOKEN_PATH), { recursive: true });
+          fs.writeFileSync(GMAIL_TOKEN_PATH, JSON.stringify(tokens), { mode: 0o600 });
+    } catch (err) {
+          console.error("[gmail] Could not save token:", err);
+    }
+}
+
+// GET /auth/gmail  — kick off the OAuth flow (protected by setup password)
+app.get("/auth/gmail", requireSetupAuth, (_req, res) => {
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !process.env.GOOGLE_REDIRECT_URI) {
+          return res.status(500).type("text/plain").send(
+                  "Missing GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET or GOOGLE_REDIRECT_URI env vars."
+                );
+    }
+    const oauth2Client = getOAuth2Client();
+    const url = oauth2Client.generateAuthUrl({
+          access_type: "offline",
+          prompt: "consent",
+          scope: GMAIL_SCOPES,
+    });
+    return res.redirect(url);
+});
+
+// GET /auth/gmail/callback — Google redirects here with ?code=
+app.get("/auth/gmail/callback", async (req, res) => {
+    const { code, error } = req.query;
+    if (error) {
+          return res.status(400).type("text/plain").send(`OAuth error: ${error}`);
+    }
+    if (!code) {
+          return res.status(400).type("text/plain").send("Missing code parameter.");
+    }
+    try {
+          const oauth2Client = getOAuth2Client();
+          const { tokens } = await oauth2Client.getToken(String(code));
+          saveGmailToken(tokens);
+          console.log("[gmail] OAuth tokens saved successfully");
+          return res.type("text/html").send(
+                  "<h2>Gmail connected successfully!</h2><p>You can close this tab and return to the setup page.</p>"
+                );
+    } catch (err) {
+          console.error("[gmail] Token exchange failed:", err);
+          return res.status(500).type("text/plain").send(`Token exchange failed: ${String(err)}`);
+    }
+});
+
+// GET /setup/api/gmail/status — check whether a Gmail token is saved (protected)
+app.get("/setup/api/gmail/status", requireSetupAuth, (_req, res) => {
+    const token = loadGmailToken();
+    if (!token) {
+          return res.json({ connected: false });
+    }
+    const expiry = token.expiry_date ? new Date(token.expiry_date).toISOString() : "unknown";
+    return res.json({ connected: true, expiry, scopes: GMAIL_SCOPES });
+});
+
+// Helper — returns an authenticated Gmail client (refreshes token automatically)
+export async function getGmailClient() {
+    const token = loadGmailToken();
+    if (!token) throw new Error("Gmail not connected. Visit /auth/gmail to authorise.");
+    const oauth2Client = getOAuth2Client();
+    oauth2Client.setCredentials(token);
+    oauth2Client.on("tokens", (newTokens) => {
+          const merged = { ...token, ...newTokens };
+          saveGmailToken(merged);
+    });
+    return google.gmail({ version: "v1", auth: oauth2Client });
+}
+// ============================================================
 process.on("SIGTERM", () => {
   // Best-effort shutdown
   try {
