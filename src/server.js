@@ -1132,6 +1132,237 @@ export async function getGmailClient() {
     return google.gmail({ version: "v1", auth: oauth2Client });
 }
 // ============================================================
+// ============================================================
+// Gmail MCP Server (HTTP/SSE transport for OpenClaw)
+// Exposes gmail_send, gmail_read_inbox, gmail_get_message tools
+// ============================================================
+
+// Track active SSE clients for the MCP server
+const _mcpClients = new Map(); // sessionId -> res
+let _mcpSessionCounter = 0;
+
+// MCP tool definitions
+const MCP_TOOLS = [
+  {
+    name: "gmail_send",
+    description: "Send an email via Gmail on behalf of the user. Use this when the user asks to send, email, or write an email to someone.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        to: { type: "string", description: "Recipient email address" },
+        subject: { type: "string", description: "Email subject line" },
+        body: { type: "string", description: "Plain text email body" },
+        cc: { type: "string", description: "CC email address (optional)" }
+      },
+      required: ["to", "subject", "body"]
+    }
+  },
+  {
+    name: "gmail_read_inbox",
+    description: "Read recent emails from the Gmail inbox. Use this when the user asks to check, read, or list their emails.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        maxResults: { type: "number", description: "Maximum number of emails to return (default 10, max 20)" },
+        query: { type: "string", description: "Gmail search query to filter emails (optional, e.g. 'is:unread', 'from:someone@example.com')" }
+      },
+      required: []
+    }
+  },
+  {
+    name: "gmail_get_message",
+    description: "Get the full content of a specific Gmail message by its ID.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        messageId: { type: "string", description: "The Gmail message ID to retrieve" }
+      },
+      required: ["messageId"]
+    }
+  }
+];
+
+// Execute a Gmail MCP tool call
+async function executeMcpTool(name, args) {
+  let gmail;
+  try {
+    gmail = await getGmailClient();
+  } catch (err) {
+    return { error: `Gmail not connected: ${err.message}. Please visit /setup/gmail/connect to authorise.` };
+  }
+
+  if (name === "gmail_send") {
+    const { to, subject, body, cc } = args;
+    if (!to || !subject || !body) {
+      return { error: "Missing required fields: to, subject, body" };
+    }
+    // Build RFC 2822 email
+    const ccLine = cc ? `Cc: ${cc}\n` : "";
+    const raw = `To: ${to}\n${ccLine}Subject: ${subject}\nContent-Type: text/plain; charset=utf-8\n\n${body}`;
+    const encoded = Buffer.from(raw).toString("base64url");
+    try {
+      const result = await gmail.users.messages.send({
+        userId: "me",
+        requestBody: { raw: encoded }
+      });
+      return { success: true, messageId: result.data.id, message: `Email sent successfully to ${to}` };
+    } catch (err) {
+      return { error: `Failed to send email: ${err.message}` };
+    }
+  }
+
+  if (name === "gmail_read_inbox") {
+    const maxResults = Math.min(Number(args.maxResults) || 10, 20);
+    const q = args.query || "in:inbox";
+    try {
+      const listRes = await gmail.users.messages.list({
+        userId: "me",
+        maxResults,
+        q
+      });
+      const messages = listRes.data.messages || [];
+      if (messages.length === 0) {
+        return { emails: [], message: "No emails found matching query." };
+      }
+      // Fetch metadata for each message
+      const summaries = await Promise.all(
+        messages.map(async (m) => {
+          try {
+            const msg = await gmail.users.messages.get({
+              userId: "me",
+              id: m.id,
+              format: "metadata",
+              metadataHeaders: ["From", "To", "Subject", "Date"]
+            });
+            const headers = msg.data.payload?.headers || [];
+            const h = (name) => headers.find(x => x.name === name)?.value || "";
+            return {
+              id: m.id,
+              from: h("From"),
+              to: h("To"),
+              subject: h("Subject"),
+              date: h("Date"),
+              snippet: msg.data.snippet || ""
+            };
+          } catch { return { id: m.id, error: "Could not fetch metadata" }; }
+        })
+      );
+      return { emails: summaries, count: summaries.length };
+    } catch (err) {
+      return { error: `Failed to read inbox: ${err.message}` };
+    }
+  }
+
+  if (name === "gmail_get_message") {
+    const { messageId } = args;
+    if (!messageId) return { error: "Missing messageId" };
+    try {
+      const msg = await gmail.users.messages.get({
+        userId: "me",
+        id: messageId,
+        format: "full"
+      });
+      const headers = msg.data.payload?.headers || [];
+      const h = (n) => headers.find(x => x.name === n)?.value || "";
+      // Extract body text
+      let bodyText = "";
+      function extractText(part) {
+        if (!part) return;
+        if (part.mimeType === "text/plain" && part.body?.data) {
+          bodyText += Buffer.from(part.body.data, "base64url").toString("utf8");
+        }
+        if (part.parts) part.parts.forEach(extractText);
+      }
+      extractText(msg.data.payload);
+      return {
+        id: messageId,
+        from: h("From"),
+        to: h("To"),
+        subject: h("Subject"),
+        date: h("Date"),
+        body: bodyText || msg.data.snippet || "(no text body)"
+      };
+    } catch (err) {
+      return { error: `Failed to get message: ${err.message}` };
+    }
+  }
+
+  return { error: `Unknown tool: ${name}` };
+}
+
+// MCP SSE endpoint — OpenClaw connects here to discover tools
+app.get("/setup/mcp/gmail", (_req, res) => {
+  const sessionId = String(++_mcpSessionCounter);
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  _mcpClients.set(sessionId, res);
+
+  // Send MCP initialize response immediately
+  const initMsg = {
+    jsonrpc: "2.0",
+    method: "notifications/initialized",
+    params: {}
+  };
+  res.write(`data: ${JSON.stringify(initMsg)}\n\n`);
+
+  // Send endpoint info so client knows where to POST
+  const endpointMsg = {
+    jsonrpc: "2.0",
+    method: "notifications/message",
+    params: { endpoint: `/setup/mcp/gmail/message?session=${sessionId}` }
+  };
+  res.write(`data: ${JSON.stringify(endpointMsg)}\n\n`);
+
+  req.on("close", () => { _mcpClients.delete(sessionId); });
+});
+
+// MCP message endpoint — receives JSON-RPC calls from OpenClaw
+app.post("/setup/mcp/gmail/message", express.json(), async (req, res) => {
+  const rpc = req.body;
+  const id = rpc?.id;
+
+  // Handle initialize
+  if (rpc.method === "initialize") {
+    return res.json({
+      jsonrpc: "2.0", id,
+      result: {
+        protocolVersion: "2024-11-05",
+        capabilities: { tools: {} },
+        serverInfo: { name: "gmail-mcp", version: "1.0.0" }
+      }
+    });
+  }
+
+  // Handle tools/list
+  if (rpc.method === "tools/list") {
+    return res.json({
+      jsonrpc: "2.0", id,
+      result: { tools: MCP_TOOLS }
+    });
+  }
+
+  // Handle tools/call
+  if (rpc.method === "tools/call") {
+    const { name, arguments: args } = rpc.params || {};
+    const toolResult = await executeMcpTool(name, args || {});
+    const isError = Boolean(toolResult.error);
+    return res.json({
+      jsonrpc: "2.0", id,
+      result: {
+        content: [{ type: "text", text: JSON.stringify(toolResult, null, 2) }],
+        isError
+      }
+    });
+  }
+
+  // Handle ping/other
+  return res.json({ jsonrpc: "2.0", id, result: {} });
+});
+
+
 app.use(async (req, res) => {
   // If not configured, force users to /setup for any non-setup routes.
   if (!isConfigured() && !req.path.startsWith("/setup")) {
