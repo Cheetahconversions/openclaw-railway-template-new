@@ -1360,6 +1360,21 @@ app.post("/setup/mcp/gmail/message", express.json(), async (req, res) => {
 
   // Handle ping/other
   return res.json({ jsonrpc: "2.0", id, result: {} });
+
+  // Targeted: write gmail skill file only
+  app.post("/setup/api/skill/write-gmail", requireSetupAuth, async (req, res) => {
+      try {
+            const skillsDir = path.join(WORKSPACE_DIR, "skills");
+            fs.mkdirSync(skillsDir, { recursive: true });
+            const skillPath = path.join(skillsDir, "gmail.md");
+            const content = String((req.body && req.body.content) || "");
+            if (!content) return res.status(400).json({ ok: false, error: "Missing content" });
+            fs.writeFileSync(skillPath, content, { encoding: "utf8" });
+            return res.json({ ok: true, path: skillPath });
+      } catch (err) {
+            return res.status(500).json({ ok: false, error: String(err) });
+      }
+  });
 });
 app.use(async (req, res) => {
   // If not configured, force users to /setup for any non-setup routes.
