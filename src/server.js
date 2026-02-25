@@ -1361,26 +1361,6 @@ app.post("/setup/mcp/gmail/message", express.json(), async (req, res) => {
   // Handle ping/other
   return res.json({ jsonrpc: "2.0", id, result: {} });
 });
-
-// Targeted endpoint: write Gemini API key into agent auth store
-app.post("/setup/api/auth/set-gemini-key", requireSetupAuth, async (req, res) => {
-    const { apiKey } = req.body || {};
-    if (!apiKey || typeof apiKey !== "string" || apiKey.length < 10) {
-          return res.status(400).json({ ok: false, error: "Missing or invalid apiKey" });
-    }
-    try {
-          const agentDir = path.join(STATE_DIR, "agents", "main", "agent");
-          fs.mkdirSync(agentDir, { recursive: true });
-          const authProfilesPath = path.join(agentDir, "auth-profiles.json");
-          let profiles = {};
-          try { profiles = JSON.parse(fs.readFileSync(authProfilesPath, "utf8")); } catch {}
-          profiles["gemini:default"] = { provider: "gemini", apiKey };
-          fs.writeFileSync(authProfilesPath, JSON.stringify(profiles, null, 2), { mode: 0o600 });
-          return res.json({ ok: true, path: authProfilesPath });
-    } catch (err) {
-          return res.status(500).json({ ok: false, error: String(err) });
-    }
-});
 app.use(async (req, res) => {
   // If not configured, force users to /setup for any non-setup routes.
   if (!isConfigured() && !req.path.startsWith("/setup")) {
