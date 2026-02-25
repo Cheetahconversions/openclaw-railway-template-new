@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import express from "express";
+import express from "express";h
 import httpProxy from "http-proxy";
 import * as tar from "tar";
 import { google } from "googleapis";
@@ -1360,6 +1360,59 @@ app.post("/setup/mcp/gmail/message", express.json(), async (req, res) => {
 
   // Handle ping/other
   return res.json({ jsonrpc: "2.0", id, result: {} });
+});
+
+          // ============================================================
+// Temporary utility endpoints for MCP setup
+// ============================================================
+
+// GET /setup/api/readfile?path=...&grep=... — read a file (or grep it)
+app.get("/setup/api/readfile", requireSetupAuth, (req, res) => {
+    try {
+          const filePath = String(req.query.path || "");
+          if (!filePath) return res.status(400).json({ ok: false, error: "Missing path" });
+          const grepStr = String(req.query.grep || "");
+          const offsetStr = String(req.query.offset || "0");
+          const lengthStr = String(req.query.length || "8000");
+          const offset = parseInt(offsetStr, 10) || 0;
+          const length = Math.min(parseInt(lengthStr, 10) || 8000, 50000);
+          if (!fs.existsSync(filePath)) return res.json({ ok: false, error: "File not found", path: filePath });
+          const stat = fs.statSync(filePath);
+          if (grepStr) {
+                  // Return lines containing grepStr with context
+                  const content = fs.readFileSync(filePath, "utf8");
+                  const lines = content.split("\n");
+                  const matched = [];
+                  lines.forEach((line, i) => {
+                            if (line.includes(grepStr)) {
+                                        matched.push({ lineNum: i + 1, line: line.slice(0, 300) });
+                            }
+                  });
+                  return res.json({ ok: true, path: filePath, size: stat.size, matches: matched.slice(0, 100) });
+          }
+          // Read a chunk of the file
+          const fd = fs.openSync(filePath, "r");
+          const buf = Buffer.alloc(length);
+          const bytesRead = fs.readSync(fd, buf, 0, length, offset);
+          fs.closeSync(fd);
+          return res.json({ ok: true, path: filePath, size: stat.size, offset, bytesRead, content: buf.slice(0, bytesRead).toString("utf8") });
+    } catch (err) {
+          return res.status(500).json({ ok: false, error: String(err) });
+    }
+});
+
+// POST /setup/api/writefile — write a file anywhere on the filesystem
+app.post("/setup/api/writefile", requireSetupAuth, (req, res) => {
+    try {
+          const { path: filePath, content } = req.body || {};
+          if (!filePath) return res.status(400).json({ ok: false, error: "Missing path" });
+          if (content === undefined) return res.status(400).json({ ok: false, error: "Missing content" });
+          fs.mkdirSync(path.dirname(filePath), { recursive: true });
+          fs.writeFileSync(filePath, String(content), { encoding: "utf8", mode: 0o644 });
+          return res.json({ ok: true, path: filePath, size: String(content).length });
+    } catch (err) {
+          return res.status(500).json({ ok: false, error: String(err) });
+    }
 });
 
 
