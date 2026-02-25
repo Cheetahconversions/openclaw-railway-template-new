@@ -1362,12 +1362,47 @@ app.post("/setup/mcp/gmail/message", express.json(), async (req, res) => {
   return res.json({ jsonrpc: "2.0", id, result: {} });
 });
 
-  // Write gmail skill file (targeted, workspace/skills only)
+  // Write workspace soul files (SOUL.md, TOOLS.md, ASSISTANT.md, skills/gmail.md)
+app.post("/setup/api/workspace/write", requireSetupAuth, async (req, res) => {
+  try {
+    const allowedFiles = ["SOUL.md", "TOOLS.md", "ASSISTANT.md", "skills/gmail.md"];
+    const filename = String((req.body && req.body.filename) || "");
+    if (!allowedFiles.includes(filename)) {
+      return res.status(400).json({ ok: false, error: "File not in allowlist: " + filename });
+    }
+    const filePath = path.join(WORKSPACE_DIR, filename);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const content = String((req.body && req.body.content) || "");
+    if (!content) return res.status(400).json({ ok: false, error: "Missing content" });
+    fs.writeFileSync(filePath, content, { encoding: "utf8" });
+    return res.json({ ok: true, path: filePath });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+// Read workspace soul files
+app.get("/setup/api/workspace/read", requireSetupAuth, async (req, res) => {
+  try {
+    const allowedFiles = ["SOUL.md", "TOOLS.md", "ASSISTANT.md", "skills/gmail.md"];
+    const filename = String(req.query.filename || "");
+    if (!allowedFiles.includes(filename)) {
+      return res.status(400).json({ ok: false, error: "File not in allowlist" });
+    }
+    const filePath = path.join(WORKSPACE_DIR, filename);
+    const exists = fs.existsSync(filePath);
+    const content = exists ? fs.readFileSync(filePath, "utf8") : "";
+    return res.json({ ok: true, path: filePath, exists, content });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+// Keep old write-gmail endpoint for backward compatibility
 app.post("/setup/api/skill/write-gmail", requireSetupAuth, async (req, res) => {
   try {
-    const skillsDir = path.join(WORKSPACE_DIR, "skills");
-    fs.mkdirSync(skillsDir, { recursive: true });
-    const skillPath = path.join(skillsDir, "gmail.md");
+    const skillPath = path.join(WORKSPACE_DIR, "skills", "gmail.md");
+    fs.mkdirSync(path.dirname(skillPath), { recursive: true });
     const content = String((req.body && req.body.content) || "");
     if (!content) return res.status(400).json({ ok: false, error: "Missing content" });
     fs.writeFileSync(skillPath, content, { encoding: "utf8" });
